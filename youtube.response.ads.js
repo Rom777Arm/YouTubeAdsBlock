@@ -1,10 +1,11 @@
 // YouTube Renderer Ads Blocker for Shadowrocket
-// https://github.com/Rom777Arm/MyScripPremium
-// Build: 2026/09/16
+// https://github.com/Rom777Arm/YouTubeAdsBlock
+// Build: 2026/09/16 — feed/banner aggressive test
 
 (() => {
+  // Рекламные renderer, которые встречаются в Home / Search / Browse / Watch API.
   const AD_RENDERERS = new Set([
-    // Основные рекламные renderer
+    // Основные in-feed / display ads
     "adSlotRenderer",
     "inFeedAdLayoutRenderer",
     "displayAdRenderer",
@@ -13,26 +14,32 @@
     "promotedSparklesWebRenderer",
     "promotedSparklesTextSearchRenderer",
 
-    // Promoted / sponsored
+    // Sponsored / promoted cards
     "compactPromotedItemRenderer",
     "compactPromotedVideoRenderer",
     "gridPromotedVideoRenderer",
-
-    // Другие рекламные renderer
     "carouselAdRenderer",
     "adPlacementRenderer",
     "adsEnginePingerRenderer",
-    "playerLegacyDesktopWatchAdsRenderer",
-    "adBreakServiceRenderer",
-    "mainAppAdsAddedToContextRenderer",
-    "adNotificationRenderer",
+
+    // Banner / promo / statement ads
+    "statementBannerRenderer",
+    "bannerPromoRenderer",
+    "backgroundPromoRenderer",
+    "mealbarPromoRenderer",
+    "feedNudgeRenderer",
+    "brandVideoShelfRenderer",
+    "brandVideoSingletonRenderer",
+    "brandcastVideoRenderer",
+    "primetimePromoRenderer",
 
     // Masthead / display
     "videoMastheadAdV3Renderer",
     "videoMastheadAdRenderer",
-    "videoMastheadAdRendererBetaPreview",
+    "videoMastheadAdPrimaryVideoRenderer",
+    "videoMastheadAdAdvertiserInfoRenderer",
 
-    // Overlay / companion
+    // Player / companion ads
     "playerOverlayAdsRenderer",
     "imageAdRenderer",
     "inStreamVideoAdRenderer",
@@ -40,20 +47,58 @@
     "companionAdsRenderer",
     "companionAdRenderer",
     "actionCompanionAdRenderer",
-    "instreamAdPlayerOverlayRenderer"
+    "instreamAdPlayerOverlayRenderer",
+    "playerLegacyDesktopWatchAdsRenderer",
+    "adBreakServiceRenderer",
+    "mainAppAdsAddedToContextRenderer",
+    "adNotificationRenderer",
+
+    // Shopping / commercial promo blocks
+    "merchandiseShelfRenderer",
+    "shoppingCarouselRenderer",
+    "shoppingProductRenderer",
+    "productListRenderer",
+    "productItemRenderer"
   ]);
 
-  // Рекламные поля верхнего уровня
+  // Поля, которые сами являются рекламными контейнерами.
   const AD_TOP_LEVEL = new Set([
     "playerAds",
     "adPlacements",
     "adSlots",
     "adBreakHeartbeatParams",
-    "adParams"
+    "adParams",
+    "adLayoutMetadata",
+    "adSlotMetadata",
+    "adBreakAdRequestData"
+  ]);
+
+  // Прямые маркеры рекламного renderer-объекта.
+  const AD_MARKER_KEYS = new Set([
+    "adLayoutMetadata",
+    "adSlotMetadata",
+    "advertiserInfo",
+    "adBadgeRenderer",
+    "sponsorshipsOffer",
+    "sponsoredBadge"
   ]);
 
   function isAdRendererKey(key) {
     return AD_RENDERERS.has(key);
+  }
+
+  function hasAdMarker(obj) {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+      return false;
+    }
+
+    for (const key of Object.keys(obj)) {
+      if (AD_MARKER_KEYS.has(key)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   function isAdObject(obj) {
@@ -67,6 +112,12 @@
       }
     }
 
+    // Рекламные объекты, которые YouTube может завернуть в обычный
+    // richItem / content / layout renderer.
+    if (hasAdMarker(obj)) {
+      return true;
+    }
+
     return false;
   }
 
@@ -75,7 +126,7 @@
       const result = [];
 
       for (const item of value) {
-        // Полностью удаляем рекламный renderer из массива
+        // Удаляем рекламный объект целиком из массива.
         if (isAdObject(item)) {
           continue;
         }
@@ -97,14 +148,19 @@
     const result = {};
 
     for (const [key, child] of Object.entries(value)) {
-
-      // Удаляем стандартные рекламные поля
+      // Рекламные контейнеры.
       if (AD_TOP_LEVEL.has(key)) {
         continue;
       }
 
-      // Удаляем renderer с рекламой
+      // Известные рекламные renderer.
       if (isAdRendererKey(key)) {
+        continue;
+      }
+
+      // Дополнительная защита: если значение само является рекламным
+      // renderer-объектом, не переносим его дальше.
+      if (child && typeof child === "object" && !Array.isArray(child) && isAdObject(child)) {
         continue;
       }
 
@@ -125,12 +181,10 @@
 
     try {
       const json = JSON.parse(body);
-
       const cleaned = clean(json);
-
       return JSON.stringify(cleaned);
     } catch (e) {
-      // Если ответ не JSON — оставляем без изменений
+      // Не JSON — ничего не меняем.
       return body;
     }
   }
