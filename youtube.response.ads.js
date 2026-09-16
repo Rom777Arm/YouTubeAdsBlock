@@ -1,9 +1,10 @@
 // YouTube Renderer Ads Blocker for Shadowrocket
-// https://github.com/Rom777Arm/YouTubeAdsBlock
-// Build: 2026/09/16 — safe rollback
+// https://github.com/Rom777Arm/MyScripPremium
+// Build: 2026/09/16
 
 (() => {
   const AD_RENDERERS = new Set([
+    // Основные рекламные renderer
     "adSlotRenderer",
     "inFeedAdLayoutRenderer",
     "displayAdRenderer",
@@ -11,61 +12,134 @@
     "promotedVideoRenderer",
     "promotedSparklesWebRenderer",
     "promotedSparklesTextSearchRenderer",
+
+    // Promoted / sponsored
     "compactPromotedItemRenderer",
     "compactPromotedVideoRenderer",
     "gridPromotedVideoRenderer",
+
+    // Другие рекламные renderer
     "carouselAdRenderer",
     "adPlacementRenderer",
+    "adsEnginePingerRenderer",
+    "playerLegacyDesktopWatchAdsRenderer",
+    "adBreakServiceRenderer",
+    "mainAppAdsAddedToContextRenderer",
+    "adNotificationRenderer",
+
+    // Masthead / display
     "videoMastheadAdV3Renderer",
     "videoMastheadAdRenderer",
+    "videoMastheadAdRendererBetaPreview",
+
+    // Overlay / companion
     "playerOverlayAdsRenderer",
     "imageAdRenderer",
     "inStreamVideoAdRenderer",
+    "adActionInterstitialRenderer",
     "companionAdsRenderer",
     "companionAdRenderer",
     "actionCompanionAdRenderer",
     "instreamAdPlayerOverlayRenderer"
   ]);
 
+  // Рекламные поля верхнего уровня
   const AD_TOP_LEVEL = new Set([
     "playerAds",
     "adPlacements",
-    "adSlots"
+    "adSlots",
+    "adBreakHeartbeatParams",
+    "adParams"
   ]);
 
-  function clean(value) {
-    if (Array.isArray(value)) {
-      return value
-        .filter(item => {
-          if (!item || typeof item !== "object" || Array.isArray(item)) return true;
-          return !Object.keys(item).some(key => AD_RENDERERS.has(key));
-        })
-        .map(clean);
+  function isAdRendererKey(key) {
+    return AD_RENDERERS.has(key);
+  }
+
+  function isAdObject(obj) {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+      return false;
     }
 
-    if (!value || typeof value !== "object") return value;
+    for (const key of Object.keys(obj)) {
+      if (isAdRendererKey(key)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function clean(value, parentKey = "") {
+    if (Array.isArray(value)) {
+      const result = [];
+
+      for (const item of value) {
+        // Полностью удаляем рекламный renderer из массива
+        if (isAdObject(item)) {
+          continue;
+        }
+
+        const cleaned = clean(item, parentKey);
+
+        if (cleaned !== undefined) {
+          result.push(cleaned);
+        }
+      }
+
+      return result;
+    }
+
+    if (!value || typeof value !== "object") {
+      return value;
+    }
 
     const result = {};
+
     for (const [key, child] of Object.entries(value)) {
-      if (AD_TOP_LEVEL.has(key)) continue;
-      if (AD_RENDERERS.has(key)) continue;
-      result[key] = clean(child);
+
+      // Удаляем стандартные рекламные поля
+      if (AD_TOP_LEVEL.has(key)) {
+        continue;
+      }
+
+      // Удаляем renderer с рекламой
+      if (isAdRendererKey(key)) {
+        continue;
+      }
+
+      const cleaned = clean(child, key);
+
+      if (cleaned !== undefined) {
+        result[key] = cleaned;
+      }
     }
+
     return result;
   }
 
   function processBody(body) {
-    if (!body || typeof body !== "string") return body;
+    if (!body || typeof body !== "string") {
+      return body;
+    }
+
     try {
-      return JSON.stringify(clean(JSON.parse(body)));
+      const json = JSON.parse(body);
+
+      const cleaned = clean(json);
+
+      return JSON.stringify(cleaned);
     } catch (e) {
+      // Если ответ не JSON — оставляем без изменений
       return body;
     }
   }
 
   try {
     if (typeof $response !== "undefined" && $response.body) {
-      $done({ body: processBody($response.body) });
+      $done({
+        body: processBody($response.body)
+      });
     } else {
       $done({});
     }
